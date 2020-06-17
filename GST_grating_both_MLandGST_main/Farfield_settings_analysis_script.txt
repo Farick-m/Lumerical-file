@@ -1,0 +1,350 @@
+##############################################
+# Far field from closed box
+# This script calculates scattering cross-section and far field projection
+#
+# Note: The far field projection calculation assumes that all of the monitors
+#       are in a single homogeneous material (i.e. there is no substrate)
+#       If a substrate is present, results from this object will be invalid.
+#       If multiple frequency points are collected, projection will be done
+#       at the first frequency point 
+#       For more information, see http://docs.lumerical.com/en/fdtd/user_guide_far_field_projections_and_symm.html
+#
+#
+# symm x,y,z:   symmetry boundary conditions
+#               1 for symmetric, 0 for no symmetry,
+#              -1 for antisymmetric 
+#               Autodetection is managed by examining fields at the symmetry boundary
+#               For more information, see http://docs.lumerical.com/en/fdtd/user_guide_symmetric_anti_symmetric.html
+#
+# do halfspace: Calculate the far field in the full half space. This takes longer than the 1D radar line cross sections.  1 for yes, 0 for no
+# 
+# Output properties 
+# XY, YZ, XZ: |E|^2 & |H|^2 far field profile of scattered field in plane
+# XY_halfspace: |E|^2 & |H|^2 in full upper/lower half space. Similar to standard projection from a single monitor
+#
+#
+# Tags: far field projection closed box
+#
+# Copyright 2012 Lumerical Solutions Inc
+##############################################
+
+
+
+if (havedata("x1", "f")) {
+  symm_x = 0;
+} else {
+  xtemp = getdata("y2", "x");
+  ztemp = getdata("y2", "z");
+  Eztemp = pinch(getdata("y2", "Ez"));
+  
+  Ez2mid = sum(Eztemp(round(length(xtemp)/2), 1:length(ztemp))^2);
+  if (Ez2mid != 0) {
+    symm_x = 1;
+  } else {
+    symm_x = -1;
+  }
+}
+
+if (havedata("y1", "f")) {
+  symm_y = 0;
+} else {
+  ytemp = getdata("x2", "y");
+  ztemp = getdata("x2", "z");
+  Eztemp = pinch(getdata("x2", "Ez"));
+  
+  Ez2mid = sum(Eztemp(round(length(ytemp)/2), 1:length(ztemp))^2);
+  if (Ez2mid != 0) {
+    symm_y = 1;
+  } else {
+    symm_y = -1;
+  }
+}
+
+if (havedata("z1", "f")) {
+  symm_z = 0;
+} else {
+  xtemp = getdata("y2", "x");
+  ztemp = getdata("y2", "z");
+  Eytemp = pinch(getdata("y2", "Ey"));
+  
+  Ey2mid = sum(Eytemp(1:length(xtemp), round(length(ztemp)/2))^2);
+  if (Ey2mid != 0) {
+    symm_z = 1;
+  } else {
+    symm_z = -1;
+  }
+}
+
+f = getdata("x2","f");            # get freqency data
+if (havedata("index","index_x")) {  # get refractive index.  Required to calcualte H2 from E2
+  n = getdata("index","index_x");   
+} else {
+  n = getdata("index","index_z");
+}
+n = n(1);                         # select first frequency point
+
+# define the angular resolution
+phi = linspace(0,360,201);
+npts = length(phi);
+
+E2_xy = matrix(length(phi));
+E2_yz = matrix(length(phi));
+E2_xz = matrix(length(phi));
+
+if (havedata("z2","Ex")) { #3D simulation
+
+    # x-y plane (phi=0 corresponds to the direction (0,1,0))
+    ?"    Projecting in x-y plane";
+    x = -sin(phi*pi/180);
+    y = cos(phi*pi/180);
+    z = 0;
+
+    # Calculate far field by summing contribution from each monitor
+    temp = farfieldexact("x2",x,y,z) + farfieldexact("y2",x,y,z) + farfieldexact("z2",x,y,z);
+    if(havedata("x1")){
+      temp = temp - farfieldexact("x1",x,y,z);
+    }else{
+      temp2 = farfieldexact("x2",-x,y,z);
+      s = symm_x*[1,-1,-1];
+      temp2(1:npts,1) = s(1)*temp2(1:npts,1);
+      temp2(1:npts,2) = s(2)*temp2(1:npts,2);
+      temp2(1:npts,3) = s(3)*temp2(1:npts,3);
+      temp = temp - temp2;
+    }
+    if(havedata("y1")){
+      temp = temp - farfieldexact("y1",x,y,z);
+    }else{
+      temp2 = farfieldexact("y2",x,-y,z);
+      s = symm_y*[-1,1,-1];  	
+      temp2(1:npts,1) = s(1)*temp2(1:npts,1);
+      temp2(1:npts,2) = s(2)*temp2(1:npts,2);
+      temp2(1:npts,3) = s(3)*temp2(1:npts,3);
+      temp = temp - temp2;
+    }
+    if(havedata("z1")){
+      temp = temp - farfieldexact("z1",x,y,z);
+    }else{
+      temp2 = farfieldexact("z2",x,y,-z);
+      s = symm_z*[-1,-1,1];
+      temp2(1:npts,1) = s(1)*temp2(1:npts,1);
+      temp2(1:npts,2) = s(2)*temp2(1:npts,2);
+      temp2(1:npts,3) = s(3)*temp2(1:npts,3);
+      temp = temp - temp2;
+    }
+    E2_xy = sum(abs(temp)^2,2); # E2 = |Ex|^2 + |Ey|^2 + |Ez|^2
+
+
+
+    # y-z plane (phi=0 corresponds to the direction (0,1,0))
+    ?"    Projecting in y-z plane";
+    x = 0;
+    y = cos(phi*pi/180);
+    z = sin(phi*pi/180);
+
+    # Calculate far field by summing contribution from each monitor
+    temp = farfieldexact("x2",x,y,z) + farfieldexact("y2",x,y,z) + farfieldexact("z2",x,y,z);
+    if(havedata("x1")){
+      temp = temp - farfieldexact("x1",x,y,z);
+    }else{
+      temp2 = farfieldexact("x2",-x,y,z);
+      s = symm_x*[1,-1,-1];
+      temp2(1:npts,1) = s(1)*temp2(1:npts,1);
+      temp2(1:npts,2) = s(2)*temp2(1:npts,2);
+      temp2(1:npts,3) = s(3)*temp2(1:npts,3);
+      temp = temp - temp2;
+    }
+    if(havedata("y1")){
+      temp = temp - farfieldexact("y1",x,y,z);
+    }else{
+      temp2 = farfieldexact("y2",x,-y,z);
+      s = symm_y*[-1,1,-1];  	
+      temp2(1:npts,1) = s(1)*temp2(1:npts,1);
+      temp2(1:npts,2) = s(2)*temp2(1:npts,2);
+      temp2(1:npts,3) = s(3)*temp2(1:npts,3);
+      temp = temp - temp2;
+    }
+    if(havedata("z1")){
+      temp = temp - farfieldexact("z1",x,y,z);
+    }else{
+      temp2 = farfieldexact("z2",x,y,-z);
+      s = symm_z*[-1,-1,1];
+      temp2(1:npts,1) = s(1)*temp2(1:npts,1);
+      temp2(1:npts,2) = s(2)*temp2(1:npts,2);
+      temp2(1:npts,3) = s(3)*temp2(1:npts,3);
+      temp = temp - temp2;
+    }
+    E2_yz = sum(abs(temp)^2,2); # E2 = |Ex|^2 + |Ey|^2 + |Ez|^2
+
+
+
+    # x-z plane (theta=0 corresponds to the direction (0,1,0))
+    ?"    Projecting in x-z plane";
+    x = cos(phi*pi/180);
+    y = 0;
+    z = sin(phi*pi/180);
+
+    # Calculate far field by summing contribution from each monitor
+    temp = farfieldexact("x2",x,y,z) + farfieldexact("y2",x,y,z) + farfieldexact("z2",x,y,z);
+    if(havedata("x1")){
+      temp = temp - farfieldexact("x1",x,y,z);
+    }else{
+      temp2 = farfieldexact("x2",-x,y,z);
+      s = symm_x*[1,-1,-1];
+      temp2(1:npts,1) = s(1)*temp2(1:npts,1);
+      temp2(1:npts,2) = s(2)*temp2(1:npts,2);
+      temp2(1:npts,3) = s(3)*temp2(1:npts,3);
+      temp = temp - temp2;
+    }
+    if(havedata("y1")){
+      temp = temp - farfieldexact("y1",x,y,z);
+    }else{
+      temp2 = farfieldexact("y2",x,-y,z);
+      s = symm_y*[-1,1,-1];  	
+      temp2(1:npts,1) = s(1)*temp2(1:npts,1);
+      temp2(1:npts,2) = s(2)*temp2(1:npts,2);
+      temp2(1:npts,3) = s(3)*temp2(1:npts,3);
+      temp = temp - temp2;
+    }
+    if(havedata("z1")){
+      temp = temp - farfieldexact("z1",x,y,z);
+    }else{
+      temp2 = farfieldexact("z2",x,y,-z);
+      s = symm_z*[-1,-1,1];
+      temp2(1:npts,1) = s(1)*temp2(1:npts,1);
+      temp2(1:npts,2) = s(2)*temp2(1:npts,2);
+      temp2(1:npts,3) = s(3)*temp2(1:npts,3);
+      temp = temp - temp2;
+    }
+    E2_xz = sum(abs(temp)^2,2); # E2 = |Ex|^2 + |Ey|^2 + |Ez|^2
+
+
+  # calculate the far field in XY upper/lower half space
+  if (%do halfspace%) {   
+    ?"    Projecting in XY upper half space";
+    res = 101;                         # projection resolution
+    u1 = linspace(-1,1,res);
+    u2 = u1;
+    X = meshgridx(u1,u2);              # These three lines define the orientation of the hemisphere (ie. XY based halfspace)
+    Y = meshgridy(u1,u2);
+    Z = sqrt(1-X^2-Y^2);
+    filter = abs(imag(Z))<=0;           # filter out any values outside of hemisphere
+
+    x = reshape(X,[res^2,1]);          # reshape coordinate matrix into a vector. This is the required form for farfieldexact.
+    y = reshape(Y,[res^2,1]);
+    z = reshape(Z,[res^2,1]);
+    x = [x,x];                         # Concatenate a 2nd copy of the vector, for the lower half space
+    y = [y,y];
+    z = [z,-z];
+    npts = length(z);                  # size of position vector
+
+    # Calculate far field by summing contribution from each monitor
+    temp = farfieldexact("x2",x,y,z) + farfieldexact("y2",x,y,z) + farfieldexact("z2",x,y,z);
+    if(havedata("x1")){
+      temp = temp - farfieldexact("x1",x,y,z);
+    }else{
+      temp2 = farfieldexact("x2",-x,y,z);
+      s = symm_x*[1,-1,-1];
+      temp2(1:npts,1) = s(1)*temp2(1:npts,1);
+      temp2(1:npts,2) = s(2)*temp2(1:npts,2);
+      temp2(1:npts,3) = s(3)*temp2(1:npts,3);
+      temp = temp - temp2;
+    }
+    if(havedata("y1")){
+      temp = temp - farfieldexact("y1",x,y,z);
+    }else{
+      temp2 = farfieldexact("y2",x,-y,z);
+      s = symm_y*[-1,1,-1];  	
+      temp2(1:npts,1) = s(1)*temp2(1:npts,1);
+      temp2(1:npts,2) = s(2)*temp2(1:npts,2);
+      temp2(1:npts,3) = s(3)*temp2(1:npts,3);
+      temp = temp - temp2;
+    }
+    if(havedata("z1")){
+      temp = temp - farfieldexact("z1",x,y,z);
+    }else{
+      temp2 = farfieldexact("z2",x,y,-z);
+      s = symm_z*[-1,-1,1];
+      temp2(1:npts,1) = s(1)*temp2(1:npts,1);
+      temp2(1:npts,2) = s(2)*temp2(1:npts,2);
+      temp2(1:npts,3) = s(3)*temp2(1:npts,3);
+      temp = temp - temp2;
+    }
+ 
+    E2_XY_halfspace = sum(abs(temp)^2,2);                               # E2 = |Ex|^2 + |Ey|^2 + |Ez|^2
+
+    E2_XY_upper_halfspace = E2_XY_halfspace(1:res^2);                   # separate the upper/lower data
+    E2_XY_lower_halfspace = E2_XY_halfspace((res^2+1):(2*res^2));
+    E2_XY_upper_halfspace = reshape(E2_XY_upper_halfspace,[res,res]);   # reshape the data back into a 2D matrix
+    E2_XY_lower_halfspace = reshape(E2_XY_lower_halfspace,[res,res]);
+    E2_XY_upper_halfspace = E2_XY_upper_halfspace*filter;               # set all values outside of hemisphere (ie. the corners of the matrices) to zero
+    E2_XY_lower_halfspace = E2_XY_lower_halfspace*filter;
+
+
+    XY_halfspace = matrixdataset("XY_halfspace");                       # create dataset 
+    XY_halfspace.addparameter("ux",u1);
+    XY_halfspace.addparameter("uy",u2);
+    XY_halfspace.addattribute("E2_upper",E2_XY_upper_halfspace);
+    XY_halfspace.addattribute("E2_lower",E2_XY_lower_halfspace);  
+    XY_halfspace.addattribute("H2_upper",E2_XY_upper_halfspace * n^2*eps0/mu0);
+    XY_halfspace.addattribute("H2_lower",E2_XY_lower_halfspace * n^2*eps0/mu0);  
+  }
+
+  # create datasets
+  XZ = matrixdataset("XZ");
+  XZ.addparameter("phi",phi);
+  XZ.addattribute("E2",E2_xz);
+  XZ.addattribute("H2",E2_xz * n^2*eps0/mu0);  # for a plane wave, E^2 and H^2 only differ by a factor of n^2*eps0/mu0
+
+  YZ = matrixdataset("YZ");
+  YZ.addparameter("phi",phi);
+  YZ.addattribute("E2",E2_yz);
+  YZ.addattribute("H2",E2_yz * n^2*eps0/mu0);  # for a plane wave, E^2 and H^2 only differ by a factor of n^2*eps0/mu0
+
+  XY = matrixdataset("XY");
+  XY.addparameter("phi",phi);
+  XY.addattribute("E2",E2_xy);
+  XY.addattribute("H2",E2_xy * n^2*eps0/mu0);  # for a plane wave, E^2 and H^2 only differ by a factor of n^2*eps0/mu0
+
+
+
+
+
+
+} else { # 2D simulation
+
+  # x-y plane (phi=0 corresponds to the direction (0,1,0))
+  ?"    Projecting in x-y plane.  2D simulation.";
+  x = -sin(phi*pi/180);
+  y = cos(phi*pi/180);
+  z = 0;
+
+  temp = farfieldexact("x2",x,y) + farfieldexact("y2",x,y);
+  if(havedata("x1")){
+    temp = temp - farfieldexact("x1",x,y);
+  }else{
+    temp2 = farfieldexact("x2",-x,y);
+    s = symm_x*[1,-1,-1];
+    temp2(1:length(phi),1) = s(1)*temp2(1:length(phi),1);
+    temp2(1:length(phi),2) = s(2)*temp2(1:length(phi),2);
+    temp2(1:length(phi),3) = s(3)*temp2(1:length(phi),3);
+    temp = temp - temp2;
+  }
+  if(havedata("y1")){
+    temp = temp - farfieldexact("y1",x,y);
+  }else{
+    temp2 = farfieldexact("y2",x,-y);
+    s = symm_y*[-1,1,-1];  	
+    temp2(1:length(phi),1) = s(1)*temp2(1:length(phi),1);
+    temp2(1:length(phi),2) = s(2)*temp2(1:length(phi),2);
+    temp2(1:length(phi),3) = s(3)*temp2(1:length(phi),3);
+    temp = temp - temp2;
+  }
+
+  E2_xy = sum(abs(temp)^2,2); # E2 = |Ex|^2 + |Ey|^2 + |Ez|^2
+
+  XY = matrixdataset("XY");
+  XY.addparameter("phi",phi);
+  XY.addattribute("E2",E2_xy);
+  XY.addattribute("H2",E2_xy * n^2*eps0/mu0);  # for a plane wave, E^2 and H^2 only differ by a factor of n^2*eps0/mu0
+}
+
